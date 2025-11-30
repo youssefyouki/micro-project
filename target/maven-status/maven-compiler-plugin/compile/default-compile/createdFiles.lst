@@ -1,0 +1,10 @@
+components\MemoryUnit.class
+components\RegisterFile.class
+simulation\CommonDataBus.class
+simulation\SimulatorEngine.class
+components\Instruction.class
+view\MainUI.class
+components\CacheBlock.class
+components\InstructionQueue.class
+components\Register.class
+components\ReservationStation.class
