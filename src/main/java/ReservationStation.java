@@ -1,5 +1,3 @@
-package components;
-
 public class ReservationStation {
     // --- YOUR FIELDS ---
     public String name; 

@@ -1,6 +1,3 @@
-package simulation;
-
-import components.*;
 import java.util.ArrayList;
 import java.util.List;
 

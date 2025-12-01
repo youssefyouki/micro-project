@@ -1,6 +1,3 @@
-
-package components;
-
 public class Instruction {
     public String op;
     public String rd; // Destination

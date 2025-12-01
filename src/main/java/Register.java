@@ -1,5 +1,3 @@
-package components;
-
 public class Register {
     public String name;  // e.g., "F0"
     public double value; // The data

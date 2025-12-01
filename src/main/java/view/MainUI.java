@@ -1,5 +1,3 @@
-package view;
-
 import javafx.application.Application;
 import javafx.collections.FXCollections;
 import javafx.geometry.Insets;
@@ -9,8 +7,6 @@ import javafx.scene.control.cell.*;
 import javafx.scene.layout.*;
 import javafx.stage.Stage;
 import javafx.stage.FileChooser;
-import components.*;
-import simulation.*;
 import java.io.*;
 import java.util.*;
 

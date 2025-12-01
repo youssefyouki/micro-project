@@ -1,5 +1,3 @@
-package simulation;
-
 public class CommonDataBus {
     private static CommonDataBus instance;
     private String publisherTag; // Who is writing?
