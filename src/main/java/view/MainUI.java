@@ -29,12 +29,12 @@ public class MainUI extends Application {
     private int addStations = 3, mulStations = 2, loadBuffers = 3, storeBuffers = 3;
     
     // UI Components
-    private TableView<ReservationStation> rsTable;
     private TableView<Register> regFileTable;
     private TableView<CacheBlock> cacheTable;
     private TableView<Integer> memoryTable;
     private Label lblCycle;
     private TextArea instructionLog;
+    private TextArea debugInfo;
     private ListView<String> instructionList;
     private List<Instruction> loadedInstructions = new ArrayList<>();
 
@@ -324,8 +324,17 @@ public class MainUI extends Application {
         TabPane tabPane = new TabPane();
         tabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
         
-        // Reservation Stations Tab
-        Tab rsTab = new Tab("Reservation Stations", createRSTable());
+        // ADD Stations Tab
+        Tab addTab = new Tab("ADD Stations", createStationTable("ADD"));
+        
+        // MUL Stations Tab
+        Tab mulTab = new Tab("MUL Stations", createStationTable("MUL"));
+        
+        // LOAD Buffers Tab
+        Tab loadTab = new Tab("LOAD Buffers", createStationTable("LOAD"));
+        
+        // STORE Buffers Tab
+        Tab storeTab = new Tab("STORE Buffers", createStationTable("STORE"));
         
         // Register File Tab
         Tab regTab = new Tab("Register File", createRegFileTable());
@@ -336,15 +345,15 @@ public class MainUI extends Application {
         // Memory Tab
         Tab memTab = new Tab("Memory", createMemoryTable());
         
-        tabPane.getTabs().addAll(rsTab, regTab, cacheTab, memTab);
+        tabPane.getTabs().addAll(addTab, mulTab, loadTab, storeTab, regTab, cacheTab, memTab);
         return tabPane;
     }
 
-    private VBox createRSTable() {
+    private VBox createStationTable(String type) {
         VBox box = new VBox(10);
         box.setPadding(new Insets(10));
         
-        rsTable = new TableView<>();
+        TableView<ReservationStation> table = new TableView<>();
         
         TableColumn<ReservationStation, String> colName = new TableColumn<>("Station");
         colName.setCellValueFactory(new PropertyValueFactory<>("name"));
@@ -378,11 +387,29 @@ public class MainUI extends Application {
         colTime.setCellValueFactory(new PropertyValueFactory<>("timeLeft"));
         colTime.setPrefWidth(80);
         
-        rsTable.getColumns().addAll(colName, colBusy, colOp, colVj, colVk, colQj, colQk, colTime);
-        rsTable.setPrefHeight(300);
+        table.getColumns().addAll(colName, colBusy, colOp, colVj, colVk, colQj, colQk, colTime);
+        table.setPrefHeight(250);
         
-        box.getChildren().addAll(new Label("Reservation Stations and Load/Store Buffers:"), rsTable);
+        // Get stations by type from simulator
+        List<ReservationStation> stationsToDisplay = getStationsByType(type);
+        table.setItems(FXCollections.observableArrayList(stationsToDisplay));
+        
+        box.getChildren().addAll(new Label(type + " Stations:"), table);
         return box;
+    }
+
+    private List<ReservationStation> getStationsByType(String type) {
+        if (simulator == null) return new ArrayList<>();
+        
+        List<ReservationStation> allStations = simulator.getReservationStations();
+        List<ReservationStation> filtered = new ArrayList<>();
+        
+        for (ReservationStation rs : allStations) {
+            if (rs.getName().startsWith(type)) {
+                filtered.add(rs);
+            }
+        }
+        return filtered;
     }
 
     private VBox createRegFileTable() {
@@ -499,9 +526,6 @@ public class MainUI extends Application {
     }
 
     private void updateTables() {
-        // Update RS Table
-        rsTable.setItems(FXCollections.observableArrayList(simulator.getReservationStations()));
-        
         // Update Register File Table
         RegisterFile floatRegs = simulator.getFloatRegFile();
         if (floatRegs != null) {
@@ -514,7 +538,6 @@ public class MainUI extends Application {
             cacheTable.setItems(FXCollections.observableArrayList(memory.getCacheData()));
         }
         
-        rsTable.refresh();
         regFileTable.refresh();
         cacheTable.refresh();
     }
