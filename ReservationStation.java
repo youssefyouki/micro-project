@@ -1,3 +1,5 @@
+package components;
+
 public class ReservationStation {
     public String name; 
     public boolean busy;
