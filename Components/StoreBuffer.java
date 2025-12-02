@@ -1,4 +1,4 @@
- package components
+ package Components;
  
  public class StoreBuffer {
 
@@ -26,7 +26,13 @@
     
     public int timeLeft;           // Cycles remaining for Store (Cache/Memory latency).
     public String sourceRegister;   // The register whose value is being stored (e.g., "F1").
+public enum DataSize {
+    WORD,       // For LW, SW (e.g., 4 bytes)
+    SINGLE,     // For L.S, S.S (e.g., 4 bytes, float)
+    DOUBLE      // For LD, SD, L.D, S.D (e.g., 8 bytes, double)
+}
 
+public DataSize size; 
     // --- Constructor ---
 
     public StoreBuffer(String name) {

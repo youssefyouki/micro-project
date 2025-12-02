@@ -1,6 +1,15 @@
-package components;
+package Components;
 
 public class LoadBuffer {
+    // Inside LoadBuffer.java or StoreBuffer.java
+
+public enum DataSize {
+    WORD,       // For LW, SW (e.g., 4 bytes)
+    SINGLE,     // For L.S, S.S (e.g., 4 bytes, float)
+    DOUBLE      // For LD, SD, L.D, S.D (e.g., 8 bytes, double)
+}
+
+public DataSize size; // Field to store the required size
     public String name;           // e.g., "LDB1", "LDB2"
     public boolean busy;
     public boolean addressReady;   // True once baseRegValue and offset are resolved.
@@ -26,7 +35,7 @@ public class LoadBuffer {
 
     // --- Constructor ---
 
-    public loadBuffer(String name) {
+    public LoadBuffer(String name) {
         this.name = name;
         this.busy = false;
         this.addressReady = false;
