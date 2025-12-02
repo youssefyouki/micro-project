@@ -1,5 +1,6 @@
 import java.util.ArrayList;
 import java.util.List;
+import components.*;
 /**
  * Minimal SimulatorEngine integration: initializes registers and reservation stations,
  * ticks stations each cycle, arbitrates a single CDB publisher, and updates registers/RSs.

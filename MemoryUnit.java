@@ -1,3 +1,5 @@
+package components;
+
 public class MemoryUnit {
     private byte[] mainMemory;
     private int blockSize;
