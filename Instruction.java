@@ -73,24 +73,35 @@ public static List<Instruction> parseProgram(String asmText) {
     }
 
     // Third pass: resolve branch labels (if any)
-    for (int i = 0; i < program.size(); i++) {
-        Instruction inst = program.get(i);
-        if ((inst.op == OpType.BNE || inst.op == OpType.BEQ) && inst.k != null) {
-            String targ = inst.k;
-            // if targ is numeric, keep it; otherwise resolve label
+for (int i = 0; i < program.size(); i++) {
+    Instruction inst = program.get(i);
+    if (inst.op == OpType.BNE || inst.op == OpType.BEQ) {
+        // parseLine stored the branch target token in 'dest' (ops.get(2))
+        if (inst.dest != null) {
+            String targ = inst.dest.trim();
+            // try numeric first (decimal or hex)
             try {
-                inst.immediate = Integer.parseInt(targ);
+                if (targ.startsWith("0x") || targ.startsWith("0X")) {
+                    inst.immediate = Integer.parseInt(targ.substring(2), 16);
+                } else {
+                    inst.immediate = Integer.parseInt(targ);
+                }
             } catch (NumberFormatException ex) {
                 Integer targetIdx = labelToIdx.get(targ);
                 if (targetIdx != null) {
                     inst.immediate = targetIdx;
                 } else {
-                    // unknown label -> set to -1 (caller must handle)
+                    // unknown label -> mark unresolved
                     inst.immediate = -1;
                 }
             }
+            // branches do not write to a destination register
+            inst.dest = null;
+        } else {
+            inst.immediate = -1;
         }
     }
+}
 
     return program;
 }

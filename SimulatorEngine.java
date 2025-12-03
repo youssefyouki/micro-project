@@ -39,6 +39,45 @@ public SimulatorEngine() {
         this.mulStations.add(rs);
     }
 
+    // ADD THIS: 3 load buffers
+    this.loadBuffers = new ArrayList<>();
+    for (int i = 1; i <= 3; i++) {
+        ReservationStation lb = new ReservationStation();
+        lb.name = "LOAD" + i;
+        lb.busy = false;
+        this.loadBuffers.add(lb);
+    }
+
+    // 3 store buffers
+    this.storeBuffers = new ArrayList<>();
+    for (int i = 1; i <= 3; i++) {
+        ReservationStation sb = new ReservationStation();
+        sb.name = "STORE" + i;
+        sb.busy = false;
+        this.storeBuffers.add(sb);
+    }
+
+    // ADD THIS: Branch station
+    this.branchStation = new ReservationStation();
+    this.branchStation.name = "BRANCH";
+    this.branchStation.busy = false;
+
+    // ADD THIS: Initialize default latencies
+    this.instructionLatencies = new HashMap<>();
+    instructionLatencies.put("ADD_D", 2);
+    instructionLatencies.put("ADD_S", 2);
+    instructionLatencies.put("SUB_D", 2);
+    instructionLatencies.put("SUB_S", 2);
+    instructionLatencies.put("MUL_D", 10);
+    instructionLatencies.put("MUL_S", 10);
+    instructionLatencies.put("DIV_D", 40);
+    instructionLatencies.put("DIV_S", 40);
+    instructionLatencies.put("DADDI", 1);
+    instructionLatencies.put("DSUBI", 1);
+    instructionLatencies.put("LOAD", 2);
+    instructionLatencies.put("STORE", 2);
+    instructionLatencies.put("BRANCH", 1);
+
     this.program = new ArrayList<>();
     this.instructionQueue = new LinkedList<>();
 }
@@ -69,10 +108,10 @@ public void nextCycle() {
     }
 
     // 2. Execute Stage (Member 3 & 4's logic)
-    // Tick timers on all busy stations. If timer == 0, request CDB.
+    executeStage();
 
     // 3. Write Result Stage (Member 6's logic)
-    // Publish result to CDB. Update registers and waiting stations.
+    writeBackStage();
 
     // 4. Update Tables (Member 1)
 }
@@ -106,29 +145,62 @@ private boolean tryIssue(Instruction ins) {
         case LD:
         case L_S:
         case L_D:
+            // Use load buffers
+            ReservationStation freeLoad = findFree(loadBuffers);
+            if (freeLoad == null) return false;
+            allocateLoadStore(freeLoad, ins, true);
+            return true;
+            
         case SW:
         case SD:
         case S_S:
         case S_D:
-            // Load/Store buffers not implemented in skeleton; mark issued immediately (simple behavior)
-            ins.issueCycle = currentCycle;
-            // For loads/stores set destination reg Qi if load
-            if (ins.op == Instruction.OpType.LW || ins.op == Instruction.OpType.LD || ins.op == Instruction.OpType.L_S || ins.op == Instruction.OpType.L_D) {
-                if (ins.dest != null) {
-                    Register destReg = getRegisterByName(ins.dest);
-                    if (destReg != null) destReg.Qi = "LSBUF"; // generic tag until buffer implemented
-                }
-            }
-            // stores would depend on source register; no buffers here
+            // Use store buffers
+            ReservationStation freeStore = findFree(storeBuffers);
+            if (freeStore == null) return false;
+            allocateLoadStore(freeStore, ins, false);
             return true;
 
         case BNE:
         case BEQ:
-            // Stall issuing until branch resolves (no prediction)
-            // Mark the branch as issued (so it is removed), but set branchStalled true to prevent issuing following instructions.
+            // Use branch station
+            if (branchStation.busy) return false; // Branch station occupied
+            
+            // Allocate branch to station
+            branchStation.busy = true;
+            branchStation.op = ins.op.name();
+            branchStation.timeLeft = 1; // Branch resolves in 1 cycle
+            
+            // Read source registers (j and k)
+            if (ins.j != null) {
+                Register regJ = getRegisterByName(ins.j);
+                if (regJ != null) {
+                    if (regJ.Qi != null) {
+                        branchStation.Qj = regJ.Qi;
+                    } else {
+                        branchStation.Vj = regJ.value;
+                        branchStation.Qj = null;
+                    }
+                }
+            }
+            
+            if (ins.k != null) {
+                Register regK = getRegisterByName(ins.k);
+                if (regK != null) {
+                    if (regK.Qi != null) {
+                        branchStation.Qk = regK.Qi;
+                    } else {
+                        branchStation.Vk = regK.value;
+                        branchStation.Qk = null;
+                    }
+                }
+            }
+            
+            // Store branch target address in result field (reuse)
+            branchStation.result = ins.immediate; // Target instruction index
+            
             ins.issueCycle = currentCycle;
             branchStalled = true;
-            // We don't set a RS here - branch execution/resolve should clear branchStalled later in execute/write stages.
             return true;
 
         default:
@@ -151,8 +223,8 @@ private ReservationStation findFree(List<ReservationStation> stations) {
 private void allocateToStation(ReservationStation rs, Instruction ins) {
     rs.busy = true;
     rs.op = ins.op.name();
-    // simple default timer placeholder
-    rs.timeLeft = 1;
+    // USE CONFIGURABLE LATENCY
+    rs.timeLeft = instructionLatencies.getOrDefault(rs.op, 1);
     // Source 1 (j)
     if (ins.j != null) {
         Register regJ = getRegisterByName(ins.j);
@@ -212,6 +284,71 @@ private void allocateToStation(ReservationStation rs, Instruction ins) {
     ins.issueCycle = currentCycle;
 }
 
+private void allocateLoadStore(ReservationStation rs, Instruction ins, boolean isLoad) {
+    rs.busy = true;
+    rs.op = ins.op.name();
+    // USE CONFIGURABLE LATENCY
+    rs.timeLeft = instructionLatencies.getOrDefault("LOAD", 2);
+    rs.addressReady = false;
+    
+    if (isLoad) {
+        // Load: dest = MEM[offset + base]
+        // Set destination register Qi
+        if (ins.dest != null) {
+            Register destReg = getRegisterByName(ins.dest);
+            if (destReg != null) destReg.Qi = rs.name;
+        }
+        
+        // Base register (j)
+        if (ins.j != null) {
+            Register baseReg = getRegisterByName(ins.j);
+            if (baseReg != null) {
+                if (baseReg.Qi != null) {
+                    rs.Qj = baseReg.Qi;
+                } else {
+                    rs.Vj = baseReg.value;
+                    rs.Qj = null;
+                    // Compute address immediately
+                    rs.address = (int)rs.Vj + ins.immediate;
+                    rs.addressReady = true;
+                }
+            }
+        }
+    } else {
+        // Store: MEM[offset + base] = source
+        // Source register (j) - value to store
+        if (ins.j != null) {
+            Register srcReg = getRegisterByName(ins.j);
+            if (srcReg != null) {
+                if (srcReg.Qi != null) {
+                    rs.Qj = srcReg.Qi;
+                } else {
+                    rs.Vj = srcReg.value;
+                    rs.Qj = null;
+                }
+            }
+        }
+        
+        // Base register (k)
+        if (ins.k != null) {
+            Register baseReg = getRegisterByName(ins.k);
+            if (baseReg != null) {
+                if (baseReg.Qi != null) {
+                    rs.Qk = baseReg.Qi;
+                } else {
+                    rs.Vk = baseReg.value;
+                    rs.Qk = null;
+                    // Compute address immediately
+                    rs.address = (int)rs.Vk + ins.immediate;
+                    rs.addressReady = true;
+                }
+            }
+        }
+    }
+    
+    ins.issueCycle = currentCycle;
+}
+
 private Register getRegisterByName(String name) {
     if (name == null) return null;
     name = name.trim().toUpperCase();
@@ -226,7 +363,7 @@ private Register getRegisterByName(String name) {
     } else if (name.charAt(0) == 'R') {
         try {
             int idx = Integer.parseInt(name.substring(1));
-            if (idx >= 0 && idx < intRegs.length) return intRegs[idx];
+            if (idx >= 0 && idx < intRegs.length) return floatRegs[idx];
         } catch (NumberFormatException e) {
             return null;
         }
@@ -242,5 +379,202 @@ public List<ReservationStation> getMulStations() { return mulStations; }
 public Register[] getFloatRegs() { return floatRegs; }
 public Register[] getIntRegs() { return intRegs; }
 public boolean isBranchStalled() { return branchStalled; }
+public List<ReservationStation> getLoadBuffers() { return loadBuffers; }
+public List<ReservationStation> getStoreBuffers() { return storeBuffers; }
+
+// ADD THESE: Methods to configure latencies
+public void setInstructionLatency(String opType, int cycles) {
+    instructionLatencies.put(opType, cycles);
 }
-// Hardware Components private MemoryUnit memory; private Register[] floatRegs; private Register[] intRegs; private List<ReservationStation> addStations; private List<ReservationStation> mulStations; private int currentCycle = 0;
+
+public int getInstructionLatency(String opType) {
+    return instructionLatencies.getOrDefault(opType, 1);
+}
+
+public Map<String, Integer> getAllLatencies() {
+    return new HashMap<>(instructionLatencies);
+}
+
+// ADD THIS
+public ReservationStation getBranchStation() {
+    return branchStation;
+}
+
+// Hardware Components
+private MemoryUnit memory;
+private Register[] floatRegs;
+private Register[] intRegs;
+private List<ReservationStation> addStations;
+private List<ReservationStation> mulStations;
+private List<ReservationStation> loadBuffers;   // ADD THIS
+private List<ReservationStation> storeBuffers;  // ADD THIS
+private ReservationStation branchStation;  // ADD THIS - single branch RS
+private int currentCycle = 0;
+
+// ADD THIS: Configurable latencies (default values)
+private Map<String, Integer> instructionLatencies;
+
+private void executeStage() {
+    // Execute ALU operations (ADD/MUL stations)
+    for (ReservationStation rs : addStations) {
+        if (rs.busy && rs.Qj == null && rs.Qk == null && rs.timeLeft > 0) {
+            if (rs.timeLeft == rs.timeLeft) { // First execution cycle
+                // Mark execution start
+                // Find instruction and set executionStartCycle
+            }
+            rs.timeLeft--;
+            if (rs.timeLeft == 0) {
+                // Compute result
+                rs.result = computeResult(rs);
+            }
+        }
+    }
+    
+    for (ReservationStation rs : mulStations) {
+        if (rs.busy && rs.Qj == null && rs.Qk == null && rs.timeLeft > 0) {
+            rs.timeLeft--;
+            if (rs.timeLeft == 0) {
+                rs.result = computeResult(rs);
+            }
+        }
+    }
+    
+    // Execute Load operations
+    for (ReservationStation lb : loadBuffers) {
+        if (lb.busy && lb.addressReady && lb.timeLeft > 0) {
+            lb.timeLeft--;
+            if (lb.timeLeft == 0) {
+                // Load from memory
+                lb.result = memory.load(lb.address);
+            }
+        } else if (lb.busy && !lb.addressReady && lb.Qj == null) {
+            // Address dependencies resolved, compute address
+            lb.address = (int)lb.Vj; // simplified
+            lb.addressReady = true;
+        }
+    }
+    
+    // Execute Store operations (similar to loads)
+    for (ReservationStation sb : storeBuffers) {
+        if (sb.busy && sb.addressReady && sb.Qj == null && sb.timeLeft > 0) {
+            sb.timeLeft--;
+            if (sb.timeLeft == 0) {
+                memory.store(sb.address, sb.Vj);
+                sb.busy = false; // Store completes without CDB
+            }
+        } else if (sb.busy && !sb.addressReady && sb.Qk == null) {
+            sb.address = (int)sb.Vk;
+            sb.addressReady = true;
+        }
+    }
+
+    // ADD THIS: Execute Branch
+    if (branchStation.busy && branchStation.Qj == null && branchStation.Qk == null && branchStation.timeLeft > 0) {
+        branchStation.timeLeft--;
+        if (branchStation.timeLeft == 0) {
+            // Evaluate branch condition
+            boolean taken = false;
+            if (branchStation.op.equals("BEQ")) {
+                taken = (branchStation.Vj == branchStation.Vk);
+            } else if (branchStation.op.equals("BNE")) {
+                taken = (branchStation.Vj != branchStation.Vk);
+            }
+            
+            if (taken) {
+                // Branch taken: flush instruction queue and jump to target
+                int targetIdx = (int) branchStation.result;
+                instructionQueue.clear();
+                
+                // Reload instructions from target address onward
+                if (targetIdx >= 0 && targetIdx < program.size()) {
+                    for (int i = targetIdx; i < program.size(); i++) {
+                        instructionQueue.add(program.get(i));
+                    }
+                    pc = targetIdx;
+                }
+            }
+            // If not taken, continue with next instruction (already in queue)
+            
+            // Clear branch stall and free station
+            branchStalled = false;
+            branchStation.busy = false;
+        }
+    }
+}
+
+private double computeResult(ReservationStation rs) {
+    switch (rs.op) {
+        case "ADD_D": case "ADD_S": return rs.Vj + rs.Vk;
+        case "SUB_D": case "SUB_S": return rs.Vj - rs.Vk;
+        case "MUL_D": case "MUL_S": return rs.Vj * rs.Vk;
+        case "DIV_D": case "DIV_S": return rs.Vj / rs.Vk;
+        case "DADDI": return rs.Vj + rs.Vk;
+        case "DSUBI": return rs.Vj - rs.Vk;
+        default: return 0.0;
+    }
+}
+
+private void writeBackStage() {
+    // Collect all stations ready to write back
+    List<ReservationStation> readyStations = new ArrayList<>();
+    
+    for (ReservationStation rs : addStations) {
+        if (rs.busy && rs.timeLeft == 0) readyStations.add(rs);
+    }
+    for (ReservationStation rs : mulStations) {
+        if (rs.busy && rs.timeLeft == 0) readyStations.add(rs);
+    }
+    for (ReservationStation lb : loadBuffers) {
+        if (lb.busy && lb.timeLeft == 0) readyStations.add(lb);
+    }
+    
+    // CDB Arbitration: only one can publish per cycle
+    if (!readyStations.isEmpty()) {
+        ReservationStation winner = readyStations.get(0); // Simple: first one wins
+        
+        // Broadcast on CDB
+        String tag = winner.name;
+        double value = winner.result;
+        
+        // Update all waiting stations
+        for (ReservationStation rs : addStations) {
+            rs.listenToCDB(tag, value);
+        }
+        for (ReservationStation rs : mulStations) {
+            rs.listenToCDB(tag, value);
+        }
+        for (ReservationStation lb : loadBuffers) {
+            lb.listenToCDB(tag, value);
+        }
+        for (ReservationStation sb : storeBuffers) {
+            sb.listenToCDB(tag, value);
+        }
+
+        // ADD THIS: Update branch station
+        if (branchStation.busy) {
+            branchStation.listenToCDB(tag, value);
+        }
+        
+        // Update register file
+        for (Register reg : floatRegs) {
+            if (tag.equals(reg.Qi)) {
+                reg.value = value;
+                reg.Qi = null;
+            }
+        }
+        for (Register reg : intRegs) {
+            if (tag.equals(reg.Qi)) {
+                reg.value = value;
+                reg.Qi = null;
+            }
+        }
+        
+        // Free the reservation station
+        winner.busy = false;
+    }
+
+    // Update branch station dependencies from CDB (if any)
+    // This should be in writeBackStage, but adding here for completeness
+}
+
+}

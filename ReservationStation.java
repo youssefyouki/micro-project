@@ -10,8 +10,19 @@ public class ReservationStation {
     public String Qk;   // Name of RS producing Vk
     public int timeLeft; // Cycles remaining for execution
     public double result; // The calculated result
+    
+    // NEW: For Load/Store operations
+    public int address;        // Computed effective address
+    public boolean addressReady; // True when address is computed
 
     public void listenToCDB(String tag, double value) {
-        // TODO (Member 3): If tag matches Qj or Qk, update Vj/Vk and clear Qj/Qk
+        if (Qj != null && Qj.equals(tag)) {
+            Vj = value;
+            Qj = null;
+        }
+        if (Qk != null && Qk.equals(tag)) {
+            Vk = value;
+            Qk = null;
+        }
     }
 }
