@@ -1,5 +1,3 @@
-package simulation;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.LinkedList;
@@ -81,5 +79,10 @@ public class CommonDataBus {
     public void resetBus() {
         busy = false;
         publisherTag = null;
+    }
+
+    // Alias for resetBus to maintain compatibility
+    public void clear() {
+        resetBus();
     }
 }

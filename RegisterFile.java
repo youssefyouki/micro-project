@@ -1,21 +1,5 @@
-package components;
-
-import simulation.CommonDataBus;
-
-class Register {
-    public String name; // e.g., "F0" or "R1"
-    public double value; // Can store int or float value (as double)
-    public String Qi; // The name of the RS producing the result (e.g., "ADD1"). Null if valid.
-    
-    public Register(String name) {
-        this.name = name;
-        this.Qi = null;
-        this.value = 0.0;
-    }
-}
-
 // Manager for registers (int and float) and listener for the Common Data Bus
-public class RegisterFile implements CommonDataBus.Listener {
+class RegisterFile implements CommonDataBus.Listener {
     private final Register[] floatRegs;
     private final Register[] intRegs;
 
