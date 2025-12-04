@@ -8,6 +8,7 @@ public class CacheBlock {
     private boolean valid; // Is this block occupied?
     private int tag;       // The tag to identify the address
     private byte[] data;   // The actual block of data
+    private int index;     // Block index in cache (for UI display)
 
     public CacheBlock(int blockSize) {
         this.valid = false;
@@ -74,6 +75,40 @@ public class CacheBlock {
     public void invalidate() {
         this.valid = false;
         this.tag = -1;
+    }
+    
+    /**
+     * Set the index for UI display
+     */
+    public void setIndex(int index) {
+        this.index = index;
+    }
+    
+    /**
+     * Get the index
+     */
+    public int getIndex() {
+        return index;
+    }
+    
+    /**
+     * Get tag as string for UI
+     */
+    public String getTagStr() {
+        return valid ? String.valueOf(tag) : "-";
+    }
+    
+    /**
+     * Get data as hex string for UI
+     */
+    public String getDataStr() {
+        if (!valid) return "-";
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < Math.min(data.length, 8); i++) {
+            sb.append(String.format("%02X ", data[i] & 0xFF));
+        }
+        if (data.length > 8) sb.append("...");
+        return sb.toString().trim();
     }
 
     @Override

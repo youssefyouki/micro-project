@@ -1,3 +1,5 @@
+package components;
+
 import java.util.*; 
 public class Instruction 
 { 
@@ -289,4 +291,15 @@ private static AddressParseResult parseMemoryAddress(String addr) {
     }
     return null;
 }
+
+// JavaBean getters for JavaFX PropertyValueFactory
+public OpType getOp() { return op; }
+public String getDest() { return dest; }
+public String getJ() { return j; }
+public String getK() { return k; }
+public int getImmediate() { return immediate; }
+public int getIssueCycle() { return issueCycle; }
+public int getExecutionStartCycle() { return executionStartCycle; }
+public int getExecutionEndCycle() { return executionEndCycle; }
+public int getWriteResultCycle() { return writeResultCycle; }
 }

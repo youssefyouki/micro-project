@@ -16,6 +16,7 @@ public class ReservationStation {
     private int originalLatency;
     private boolean resultReady;
     private String destRegister;
+    public Instruction instruction; // Reference to the instruction being executed
     
     public ReservationStation(String name) {
         this.name = name;
@@ -154,11 +155,25 @@ public class ReservationStation {
         this.result = 0.0;
         this.resultReady = false;
         this.destRegister = null;
+        this.instruction = null;
     }
     
     public String getDestRegister() {
         return destRegister;
     }
+    
+    // JavaBean getters for JavaFX PropertyValueFactory
+    public String getName() { return name; }
+    public boolean getBusy() { return busy; }
+    public String getOp() { return op; }
+    public double getVj() { return Vj; }
+    public double getVk() { return Vk; }
+    public String getQj() { return Qj; }
+    public String getQk() { return Qk; }
+    public int getTimeLeft() { return timeLeft; }
+    public double getResultValue() { return result; }
+    public int getAddress() { return address; }
+    public boolean isAddressReady() { return addressReady; }
     
     @Override
     public String toString() {

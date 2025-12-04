@@ -4,6 +4,7 @@
     <groupId>com.simulator</groupId>
     <artifactId>tomasulo-simulator</artifactId>
     <version>1.0</version>
+    <packaging>jar</packaging>
 
     <properties>
         <javafx.version>11.0.2</javafx.version>

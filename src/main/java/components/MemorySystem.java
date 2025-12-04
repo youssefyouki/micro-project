@@ -81,9 +81,21 @@ public class MemorySystem {
             hits++;
             System.out.println("  Result: CACHE HIT!");
             
+            // Calculate how many bytes we can actually read from this block
+            int availableBytes = blockSize - offsetInBlock;
+            int actualBytesToRead = Math.min(bytesToRead, availableBytes);
+            
             // Extract the requested bytes from the cache block
             byte[] data = new byte[bytesToRead];
-            System.arraycopy(block.getData(), offsetInBlock, data, 0, bytesToRead);
+            System.arraycopy(block.getData(), offsetInBlock, data, 0, actualBytesToRead);
+            
+            // If we need more bytes than available in this block, read from main memory
+            if (actualBytesToRead < bytesToRead) {
+                System.out.println("  WARNING: Load spans multiple cache blocks, reading remaining " + 
+                    (bytesToRead - actualBytesToRead) + " bytes from main memory");
+                System.arraycopy(mainMemory, address + actualBytesToRead, data, actualBytesToRead, 
+                    bytesToRead - actualBytesToRead);
+            }
             
             return new MemoryResponse(data, hitLatency);
         } else {
@@ -105,9 +117,21 @@ public class MemorySystem {
             
             System.out.println("  Loaded block from memory [" + blockStartAddress + " to " + (blockStartAddress + blockSize - 1) + "]");
             
+            // Calculate how many bytes we can actually read from this block
+            int availableBytes = blockSize - offsetInBlock;
+            int actualBytesToRead = Math.min(bytesToRead, availableBytes);
+            
             // Extract the requested bytes from the newly loaded block
             byte[] data = new byte[bytesToRead];
-            System.arraycopy(blockData, offsetInBlock, data, 0, bytesToRead);
+            System.arraycopy(blockData, offsetInBlock, data, 0, actualBytesToRead);
+            
+            // If we need more bytes than available in this block, read from main memory
+            if (actualBytesToRead < bytesToRead) {
+                System.out.println("  WARNING: Load spans multiple cache blocks, reading remaining " + 
+                    (bytesToRead - actualBytesToRead) + " bytes from main memory");
+                System.arraycopy(mainMemory, address + actualBytesToRead, data, actualBytesToRead, 
+                    bytesToRead - actualBytesToRead);
+            }
             
             // Total latency = hitLatency + missPenalty
             return new MemoryResponse(data, hitLatency + missPenalty);
@@ -140,9 +164,19 @@ public class MemorySystem {
         // Update cache if the block is present
         CacheBlock block = cache[cacheIndex];
         if (block.isValid() && block.getTag() == tag) {
-            // Update the cache block
-            System.arraycopy(data, 0, block.getData(), offsetInBlock, data.length);
-            System.out.println("  Cache updated (Write-Through)");
+            // Calculate how many bytes we can actually write to this block
+            int availableBytes = blockSize - offsetInBlock;
+            int actualBytesToWrite = Math.min(data.length, availableBytes);
+            
+            // Update the cache block with what fits
+            System.arraycopy(data, 0, block.getData(), offsetInBlock, actualBytesToWrite);
+            
+            if (actualBytesToWrite < data.length) {
+                System.out.println("  Cache partially updated (Write-Through) - " + actualBytesToWrite + " of " + data.length + " bytes");
+                System.out.println("  WARNING: Store spans multiple cache blocks");
+            } else {
+                System.out.println("  Cache updated (Write-Through)");
+            }
         } else {
             System.out.println("  Cache not updated (block not present)");
         }
@@ -216,6 +250,53 @@ public class MemorySystem {
             block.invalidate();
         }
         System.out.println("Cache invalidated");
+    }
+    
+    /**
+     * Get cache blocks for UI display
+     */
+    public CacheBlock[] getCacheBlocks() {
+        // Set indices for UI display
+        for (int i = 0; i < cache.length; i++) {
+            cache[i].setIndex(i);
+        }
+        return cache;
+    }
+    
+    /**
+     * Get main memory byte at address
+     */
+    public byte getMemoryByte(int address) {
+        if (address >= 0 && address < mainMemory.length) {
+            return mainMemory[address];
+        }
+        return 0;
+    }
+    
+    /**
+     * Store a single byte to main memory (for memory initialization)
+     */
+    public void storeByte(int address, byte value) {
+        if (address >= 0 && address < mainMemory.length) {
+            mainMemory[address] = value;
+        }
+    }
+    
+    /**
+     * Get memory size
+     */
+    public int getMemorySize() {
+        return mainMemory.length;
+    }
+    
+    /**
+     * Get cache statistics for UI
+     */
+    public int getHits() { return hits; }
+    public int getMisses() { return misses; }
+    public double getHitRate() {
+        int total = hits + misses;
+        return total > 0 ? (hits * 100.0 / total) : 0.0;
     }
     
     // ===== Adapter Methods for LoadBuffer/StoreBuffer Compatibility =====
