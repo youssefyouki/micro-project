@@ -1,4 +1,4 @@
-package components;
+package Components;
 
 public class ReservationStation {
     public String name; // e.g., "ADD1", "MUL2"

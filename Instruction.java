@@ -1,5 +1,3 @@
-package model;
-
 public class Instruction {
     public enum OpType {
         DADDI, DSUBI, ADD_D, ADD_S, SUB_D, SUB_S, MUL_D, MUL_S, DIV_D, DIV_S,
