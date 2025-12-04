@@ -26,6 +26,7 @@
     
     public int timeLeft;           // Cycles remaining for Store (Cache/Memory latency).
     public String sourceRegister;   // The register whose value is being stored (e.g., "F1").
+    public Instruction instruction; // Reference to the instruction being executed
 public enum DataSize {
     WORD,       // For LW, SW (e.g., 4 bytes)
     SINGLE,     // For L.S, S.S (e.g., 4 bytes, float)
@@ -59,6 +60,8 @@ public DataSize size;
         if (Qj != null && Qj.equals(tag)) {
             this.baseRegValue = value;
             this.Qj = null; // Address dependency resolved
+            // Calculate the address now that we have the base register value
+            this.calculatedAddress = (int)this.baseRegValue + this.offset;
             this.addressReady = true;
         }
 
@@ -85,5 +88,21 @@ public DataSize size;
         this.V_Value = 0.0;
         this.offset = 0;
         this.sourceRegister = null;
+        this.instruction = null;
     }
+    
+    // JavaBean getters for JavaFX PropertyValueFactory
+    public String getName() { return name; }
+    public boolean getBusy() { return busy; }
+    public boolean isAddressReady() { return addressReady; }
+    public boolean isValueReady() { return valueReady; }
+    public double getBaseRegValue() { return baseRegValue; }
+    public String getQj() { return Qj; }
+    public int getOffset() { return offset; }
+    public int getCalculatedAddress() { return calculatedAddress; }
+    public double getV_Value() { return V_Value; }
+    public String getQk() { return Qk; }
+    public int getTimeLeft() { return timeLeft; }
+    public String getSourceRegister() { return sourceRegister; }
+    public DataSize getSize() { return size; }
 }

@@ -1,3 +1,5 @@
+package simulation;
+
 import components.*;
 import java.util.*;
 
@@ -112,18 +114,37 @@ public void loadProgram(String asmText) {
     this.branchStalled = false;
 }
 
+// Initialize memory with a double value at a specific address
+public void initializeMemory(int address, double value) {
+    // Convert double to 8 bytes and store in memory
+    long bits = Double.doubleToLongBits(value);
+    System.out.println("[INIT] Writing " + value + " to memory address " + address + 
+                       " (0x" + String.format("%04X", address) + ")");
+    for (int i = 0; i < 8; i++) {
+        byte b = (byte) ((bits >> (i * 8)) & 0xFF);
+        memory.storeByte(address + i, b);
+    }
+}
+
 public void nextCycle() {
     currentCycle++;
+    System.out.println("\n>>> Starting Cycle " + currentCycle + " <<<");
 
     // 1. Issue Stage (Member 2's logic)
     if (!branchStalled && !instructionQueue.isEmpty()) {
         Instruction next = instructionQueue.peek();
+        System.out.println("  [ISSUE] Attempting to issue: " + next.op);
         boolean issued = tryIssue(next);
         if (issued) {
             instructionQueue.poll();
+            System.out.println("  [ISSUE] Successfully issued at cycle " + currentCycle);
         } else {
-            // stall: no free reservation station/buffer
+            System.out.println("  [ISSUE] Stalled - no free station/buffer");
         }
+    } else if (branchStalled) {
+        System.out.println("  [ISSUE] Branch stalled - no issue this cycle");
+    } else {
+        System.out.println("  [ISSUE] Instruction queue empty");
     }
 
     // 2. Execute Stage (Member 3 & 4's logic)
@@ -132,7 +153,7 @@ public void nextCycle() {
     // 3. Write Result Stage (Member 6's logic)
     writeBackStage();
 
-    // 4. Update Tables (Member 1)
+    System.out.println(">>> Cycle " + currentCycle + " Complete <<<\n");
 }
 
 // Attempt to issue an instruction. Return true if issued (removed from queue), false if stall.
@@ -258,6 +279,7 @@ private StoreBuffer findFreeStore(List<StoreBuffer> buffers) {
 private void allocateToStation(ReservationStation rs, Instruction ins) {
     rs.busy = true;
     rs.op = ins.op.name();
+    rs.instruction = ins; // Link instruction to station
     // USE CONFIGURABLE LATENCY
     rs.timeLeft = instructionLatencies.getOrDefault(rs.op, 1);
     // Source 1 (j)
@@ -386,6 +408,7 @@ private void allocateLoadStore(ReservationStation rs, Instruction ins, boolean i
 
 private void allocateLoad(LoadBuffer lb, Instruction ins) {
     lb.busy = true;
+    lb.instruction = ins; // Link instruction to buffer
     // Determine data size based on instruction opcode
     switch (ins.op) {
         case LW:
@@ -417,6 +440,7 @@ private void allocateLoad(LoadBuffer lb, Instruction ins) {
         if (baseReg != null) {
             if (baseReg.Qi != null) {
                 lb.Qj = baseReg.Qi;
+                lb.baseRegValue = 0; // Will be updated via CDB
             } else {
                 lb.baseRegValue = baseReg.value;
                 lb.Qj = null;
@@ -424,7 +448,17 @@ private void allocateLoad(LoadBuffer lb, Instruction ins) {
                 lb.calculatedAddress = (int)lb.baseRegValue + lb.offset;
                 lb.addressReady = true;
             }
+        } else {
+            // Base register not found, use offset only
+            lb.baseRegValue = 0;
+            lb.calculatedAddress = lb.offset;
+            lb.addressReady = true;
         }
+    } else {
+        // No base register specified, address is just the offset
+        lb.baseRegValue = 0;
+        lb.calculatedAddress = lb.offset;
+        lb.addressReady = true;
     }
     
     ins.issueCycle = currentCycle;
@@ -432,6 +466,7 @@ private void allocateLoad(LoadBuffer lb, Instruction ins) {
 
 private void allocateStore(StoreBuffer sb, Instruction ins) {
     sb.busy = true;
+    sb.instruction = ins; // Link instruction to buffer
     // Determine data size based on instruction opcode
     switch (ins.op) {
         case SW:
@@ -472,6 +507,7 @@ private void allocateStore(StoreBuffer sb, Instruction ins) {
         if (baseReg != null) {
             if (baseReg.Qi != null) {
                 sb.Qj = baseReg.Qi;
+                sb.baseRegValue = 0; // Will be updated via CDB
             } else {
                 sb.baseRegValue = baseReg.value;
                 sb.Qj = null;
@@ -479,7 +515,17 @@ private void allocateStore(StoreBuffer sb, Instruction ins) {
                 sb.calculatedAddress = (int)sb.baseRegValue + sb.offset;
                 sb.addressReady = true;
             }
+        } else {
+            // Base register not found, use offset only
+            sb.baseRegValue = 0;
+            sb.calculatedAddress = sb.offset;
+            sb.addressReady = true;
         }
+    } else {
+        // No base register specified, address is just the offset
+        sb.baseRegValue = 0;
+        sb.calculatedAddress = sb.offset;
+        sb.addressReady = true;
     }
     
     ins.issueCycle = currentCycle;
@@ -797,23 +843,35 @@ private void executeStage() {
     // Execute ALU operations (ADD/MUL stations)
     for (ReservationStation rs : addStations) {
         if (rs.busy && rs.Qj == null && rs.Qk == null && rs.timeLeft > 0) {
-            if (rs.timeLeft == rs.timeLeft) { // First execution cycle
-                // Mark execution start
-                // Find instruction and set executionStartCycle
+            // Mark execution start on first cycle
+            if (rs.instruction != null && rs.instruction.executionStartCycle == -1) {
+                rs.instruction.executionStartCycle = currentCycle;
             }
+            
             rs.timeLeft--;
             if (rs.timeLeft == 0) {
-                // Compute result
+                // Compute result and mark execution end
                 rs.result = computeResult(rs);
+                if (rs.instruction != null) {
+                    rs.instruction.executionEndCycle = currentCycle;
+                }
             }
         }
     }
     
     for (ReservationStation rs : mulStations) {
         if (rs.busy && rs.Qj == null && rs.Qk == null && rs.timeLeft > 0) {
+            // Mark execution start on first cycle
+            if (rs.instruction != null && rs.instruction.executionStartCycle == -1) {
+                rs.instruction.executionStartCycle = currentCycle;
+            }
+            
             rs.timeLeft--;
             if (rs.timeLeft == 0) {
                 rs.result = computeResult(rs);
+                if (rs.instruction != null) {
+                    rs.instruction.executionEndCycle = currentCycle;
+                }
             }
         }
     }
@@ -821,11 +879,19 @@ private void executeStage() {
     // Execute Load operations
     for (LoadBuffer lb : loadBuffers) {
         if (lb.busy && lb.addressReady && lb.timeLeft > 0) {
+            // Mark execution start on first cycle
+            if (lb.instruction != null && lb.instruction.executionStartCycle == -1) {
+                lb.instruction.executionStartCycle = currentCycle;
+            }
+            
             lb.timeLeft--;
             if (lb.timeLeft == 0) {
                 // Load from memory - memory.load() sets lb.result internally
                 memory.load(lb.calculatedAddress, lb.size, lb);
                 lb.valueReady = true; // Signal that value is ready for writeback
+                if (lb.instruction != null) {
+                    lb.instruction.executionEndCycle = currentCycle;
+                }
             }
         } else if (lb.busy && !lb.addressReady && lb.Qj == null) {
             // Address dependencies resolved, compute address
@@ -837,11 +903,22 @@ private void executeStage() {
     // Execute Store operations (similar to loads)
     for (StoreBuffer sb : storeBuffers) {
         if (sb.busy && sb.addressReady && sb.valueReady && sb.timeLeft > 0) {
+            // Mark execution start on first cycle
+            if (sb.instruction != null && sb.instruction.executionStartCycle == -1) {
+                sb.instruction.executionStartCycle = currentCycle;
+            }
+            
             sb.timeLeft--;
             if (sb.timeLeft == 0) {
                 // Store to memory using the store buffer's size
                 memory.store(sb.calculatedAddress, sb.size, sb.V_Value);
-                sb.busy = false; // Store completes without CDB
+                
+                // Mark execution end (no write result - stores don't use CDB)
+                if (sb.instruction != null) {
+                    sb.instruction.executionEndCycle = currentCycle;
+                }
+                
+                sb.clear(); // Clear the store buffer
             }
         } else if (sb.busy && !sb.addressReady && sb.Qj == null) {
             // Address dependencies resolved, compute address
@@ -914,7 +991,10 @@ private void writeBackStage() {
                 winnerTag = rs.name;
                 winnerValue = rs.result;
                 foundWinner = true;
-                rs.busy = false; // Free the station
+                if (rs.instruction != null) {
+                    rs.instruction.writeResultCycle = currentCycle;
+                }
+                rs.clear(); // Clear the station
                 break;
             }
         }
@@ -926,7 +1006,10 @@ private void writeBackStage() {
                 winnerTag = rs.name;
                 winnerValue = rs.result;
                 foundWinner = true;
-                rs.busy = false; // Free the station
+                if (rs.instruction != null) {
+                    rs.instruction.writeResultCycle = currentCycle;
+                }
+                rs.clear(); // Clear the station
                 break;
             }
         }
@@ -939,6 +1022,9 @@ private void writeBackStage() {
                 winnerTag = lb.name;
                 winnerValue = lb.result;
                 foundWinner = true;
+                if (lb.instruction != null) {
+                    lb.instruction.writeResultCycle = currentCycle;
+                }
                 lb.clear(); // Free the buffer
                 break;
             }

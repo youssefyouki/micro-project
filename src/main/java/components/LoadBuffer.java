@@ -32,6 +32,7 @@ public DataSize size; // Field to store the required size
     public int timeLeft;           // Cycles remaining for Load (Cache/Memory latency).
     public double result;         // The final loaded data.
     public String destRegister;    // The register this load is writing to (e.g., "F1").
+    public Instruction instruction; // Reference to the instruction being executed
 
     // --- Constructor ---
 
@@ -52,8 +53,8 @@ public DataSize size; // Field to store the required size
         if (Qj != null && Qj.equals(tag)) {
             this.baseRegValue = value;
             this.Qj = null; // Dependency resolved!
-            // The address is now ready to be calculated next cycle (base + offset)
-            // or is ready if it was calculated in the same cycle.
+            // Calculate the address now that we have the base register value
+            this.calculatedAddress = (int)this.baseRegValue + this.offset;
             this.addressReady = true; 
         }
     }
@@ -72,5 +73,20 @@ public DataSize size; // Field to store the required size
         this.offset = 0;
         this.result = 0.0;
         this.destRegister = null;
+        this.instruction = null;
     }
+    
+    // JavaBean getters for JavaFX PropertyValueFactory
+    public String getName() { return name; }
+    public boolean getBusy() { return busy; }
+    public boolean isAddressReady() { return addressReady; }
+    public boolean isValueReady() { return valueReady; }
+    public double getBaseRegValue() { return baseRegValue; }
+    public String getQj() { return Qj; }
+    public int getOffset() { return offset; }
+    public int getCalculatedAddress() { return calculatedAddress; }
+    public int getTimeLeft() { return timeLeft; }
+    public double getResult() { return result; }
+    public String getDestRegister() { return destRegister; }
+    public DataSize getSize() { return size; }
 }

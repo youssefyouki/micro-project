@@ -1,3 +1,7 @@
+package components;
+
+import simulation.CommonDataBus;
+
 // Manager for registers (int and float) and listener for the Common Data Bus
 class RegisterFile implements CommonDataBus.Listener {
     private final Register[] floatRegs;

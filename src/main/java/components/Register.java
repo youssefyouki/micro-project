@@ -1,3 +1,5 @@
+package components;
+
 public class Register {
     public String name;
     public double value;
@@ -8,4 +10,9 @@ public class Register {
         this.Qi = null;
         this.value = 0.0;
     }
+    
+    // JavaBean getters for JavaFX PropertyValueFactory
+    public String getName() { return name; }
+    public double getValue() { return value; }
+    public String getQi() { return Qi; }
 }
