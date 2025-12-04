@@ -1,8 +1,5 @@
-package simulation;
-
-import components.*; 
-import model.*;
- import java.util.*;
+import components.*;
+import java.util.*;
 
 public class SimulatorEngine { 
     // Instruction unit fields
@@ -26,15 +23,13 @@ public SimulatorEngine() {
     this.mulStations = new ArrayList<>();
     // 3 add stations
     for (int i = 1; i <= 3; i++) {
-        ReservationStation rs = new ReservationStation();
-        rs.name = "ADD" + i;
+        ReservationStation rs = new ReservationStation("ADD" + i);
         rs.busy = false;
         this.addStations.add(rs);
     }
     // 2 mul stations
     for (int i = 1; i <= 2; i++) {
-        ReservationStation rs = new ReservationStation();
-        rs.name = "MUL" + i;
+        ReservationStation rs = new ReservationStation("MUL" + i);
         rs.busy = false;
         this.mulStations.add(rs);
     }
@@ -42,8 +37,7 @@ public SimulatorEngine() {
     // ADD THIS: 3 load buffers
     this.loadBuffers = new ArrayList<>();
     for (int i = 1; i <= 3; i++) {
-        ReservationStation lb = new ReservationStation();
-        lb.name = "LOAD" + i;
+        ReservationStation lb = new ReservationStation("LOAD" + i);
         lb.busy = false;
         this.loadBuffers.add(lb);
     }
@@ -51,15 +45,13 @@ public SimulatorEngine() {
     // 3 store buffers
     this.storeBuffers = new ArrayList<>();
     for (int i = 1; i <= 3; i++) {
-        ReservationStation sb = new ReservationStation();
-        sb.name = "STORE" + i;
+        ReservationStation sb = new ReservationStation("STORE" + i);
         sb.busy = false;
         this.storeBuffers.add(sb);
     }
 
     // ADD THIS: Branch station
-    this.branchStation = new ReservationStation();
-    this.branchStation.name = "BRANCH";
+    this.branchStation = new ReservationStation("BRANCH");
     this.branchStation.busy = false;
 
     // ADD THIS: Initialize default latencies
@@ -575,6 +567,43 @@ private void writeBackStage() {
 
     // Update branch station dependencies from CDB (if any)
     // This should be in writeBackStage, but adding here for completeness
+}
+
+// Helper method to get register by name (for TestTomasulo compatibility)
+public Register getRegister(String name) {
+    return getRegisterByName(name);
+}
+
+// Legacy method for issuing instructions (for TestTomasulo compatibility)
+public boolean issueInstruction(Instruction inst) {
+    return tryIssue(inst);
+}
+
+// Print status of reservation stations (for TestTomasulo compatibility)
+public void printStatus() {
+    System.out.println("\n=== Cycle " + currentCycle + " ===");
+    System.out.println("Add Stations:");
+    for (ReservationStation rs : addStations) {
+        if (rs.busy) {
+            System.out.printf("  RS[%s]: Busy=%s, Op=%s, Vj=%.2f, Vk=%.2f, Qj=%s, Qk=%s, Time=%d, Ready=%s%n",
+                rs.name, rs.busy, rs.op, rs.Vj, rs.Vk,
+                (rs.Qj == null ? "-" : rs.Qj),
+                (rs.Qk == null ? "-" : rs.Qk),
+                rs.timeLeft,
+                (rs.timeLeft == 0));
+        }
+    }
+    System.out.println("Mul Stations:");
+    for (ReservationStation rs : mulStations) {
+        if (rs.busy) {
+            System.out.printf("  RS[%s]: Busy=%s, Op=%s, Vj=%.2f, Vk=%.2f, Qj=%s, Qk=%s, Time=%d, Ready=%s%n",
+                rs.name, rs.busy, rs.op, rs.Vj, rs.Vk,
+                (rs.Qj == null ? "-" : rs.Qj),
+                (rs.Qk == null ? "-" : rs.Qk),
+                rs.timeLeft,
+                (rs.timeLeft == 0));
+        }
+    }
 }
 
 }

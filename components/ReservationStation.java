@@ -10,6 +10,8 @@ public class ReservationStation {
     public String Qk;   
     public int timeLeft; 
     public double result; 
+    public int address;          // For load/store: memory address
+    public boolean addressReady; // For load/store: address computed?
     
     private int originalLatency;
     private boolean resultReady;
