@@ -11,7 +11,7 @@ public class MainUI extends Application {
 
     @Override
     public void start(Stage primaryStage) {
-        // TODO (Member 1): Setup Tables for RS, Buffers, and Registers
+        // TODO (Member 1): Setup Tables for RS, Buffers, and Registers [cite: 27]
         TableView rsTable = new TableView();
         TableView regTable = new TableView();
         

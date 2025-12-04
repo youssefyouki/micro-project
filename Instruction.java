@@ -5,12 +5,11 @@ public class Instruction {
     }
 
     public OpType op;
-    public String dest; // e.g., "F1", "R2"
-    public String j;    // Source 1
-    public String k;    // Source 2 or Immediate
-    public int immediate; // For DADDI, offsets, etc.
+    public String dest;
+    public String j;
+    public String k;
+    public int immediate;
     
-    // Status tracking for the GUI table
     public int issueCycle;
     public int executionStartCycle;
     public int executionEndCycle;
