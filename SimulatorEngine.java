@@ -8,9 +8,36 @@ private Queue<Instruction> instructionQueue;
 private int pc = 0;
 private boolean branchStalled = false;
 
+/**
+ * Default constructor with standard configuration:
+ * - 3 ADD stations, 2 MUL stations
+ * - 3 Load buffers, 3 Store buffers
+ * - 4KB memory, 256B cache, 16B blocks
+ * - 1 cycle hit latency, 10 cycle miss penalty
+ */
 public SimulatorEngine() {
-    // Basic initializations to support the Instruction Unit
-    this.memory = new MemoryUnit(1024 * 4, 16); // 4KB mem, 16B block default
+    this(3, 2, 3, 3, 1024 * 4, 256, 16, 1, 10);
+}
+
+/**
+ * Parameterized constructor allowing full configuration
+ * @param numAddStations Number of ADD/SUB reservation stations
+ * @param numMulStations Number of MUL/DIV reservation stations
+ * @param numLoadBuffers Number of load buffers
+ * @param numStoreBuffers Number of store buffers
+ * @param memorySize Total memory size in bytes
+ * @param cacheSize Cache size in bytes
+ * @param blockSize Block size in bytes
+ * @param hitLatency Cache hit latency in cycles
+ * @param missPenalty Cache miss penalty in cycles
+ */
+public SimulatorEngine(int numAddStations, int numMulStations, int numLoadBuffers, 
+                       int numStoreBuffers, int memorySize, int cacheSize, 
+                       int blockSize, int hitLatency, int missPenalty) {
+    // Initialize MemorySystem with user-specified cache parameters
+    this.memory = new MemorySystem(memorySize, cacheSize, blockSize, hitLatency, missPenalty);
+    
+    // Initialize register files
     this.floatRegs = new Register[32];
     this.intRegs = new Register[32];
     for (int i = 0; i < 32; i++) {
@@ -18,43 +45,43 @@ public SimulatorEngine() {
         this.intRegs[i] = new Register("R" + i);
     }
 
-    // Create a few reservation stations (defaults)
+    // Create ADD/SUB reservation stations (user-specified count)
     this.addStations = new ArrayList<>();
-    this.mulStations = new ArrayList<>();
-    // 3 add stations
-    for (int i = 1; i <= 3; i++) {
+    for (int i = 1; i <= numAddStations; i++) {
         ReservationStation rs = new ReservationStation("ADD" + i);
         rs.busy = false;
         this.addStations.add(rs);
     }
-    // 2 mul stations
-    for (int i = 1; i <= 2; i++) {
+    
+    // Create MUL/DIV reservation stations (user-specified count)
+    this.mulStations = new ArrayList<>();
+    for (int i = 1; i <= numMulStations; i++) {
         ReservationStation rs = new ReservationStation("MUL" + i);
         rs.busy = false;
         this.mulStations.add(rs);
     }
 
-    // ADD THIS: 3 load buffers
+    // Create load buffers (user-specified count)
     this.loadBuffers = new ArrayList<>();
-    for (int i = 1; i <= 3; i++) {
-        ReservationStation lb = new ReservationStation("LOAD" + i);
+    for (int i = 1; i <= numLoadBuffers; i++) {
+        LoadBuffer lb = new LoadBuffer("LOAD" + i);
         lb.busy = false;
         this.loadBuffers.add(lb);
     }
 
-    // 3 store buffers
+    // Create store buffers (user-specified count)
     this.storeBuffers = new ArrayList<>();
-    for (int i = 1; i <= 3; i++) {
-        ReservationStation sb = new ReservationStation("STORE" + i);
+    for (int i = 1; i <= numStoreBuffers; i++) {
+        StoreBuffer sb = new StoreBuffer("STORE" + i);
         sb.busy = false;
         this.storeBuffers.add(sb);
     }
 
-    // ADD THIS: Branch station
+    // Create branch station (single station)
     this.branchStation = new ReservationStation("BRANCH");
     this.branchStation.busy = false;
 
-    // ADD THIS: Initialize default latencies
+    // Initialize default instruction latencies
     this.instructionLatencies = new HashMap<>();
     instructionLatencies.put("ADD_D", 2);
     instructionLatencies.put("ADD_S", 2);
@@ -138,9 +165,9 @@ private boolean tryIssue(Instruction ins) {
         case L_S:
         case L_D:
             // Use load buffers
-            ReservationStation freeLoad = findFree(loadBuffers);
+            LoadBuffer freeLoad = findFreeLoad(loadBuffers);
             if (freeLoad == null) return false;
-            allocateLoadStore(freeLoad, ins, true);
+            allocateLoad(freeLoad, ins);
             return true;
             
         case SW:
@@ -148,9 +175,9 @@ private boolean tryIssue(Instruction ins) {
         case S_S:
         case S_D:
             // Use store buffers
-            ReservationStation freeStore = findFree(storeBuffers);
+            StoreBuffer freeStore = findFreeStore(storeBuffers);
             if (freeStore == null) return false;
-            allocateLoadStore(freeStore, ins, false);
+            allocateStore(freeStore, ins);
             return true;
 
         case BNE:
@@ -208,6 +235,22 @@ private ReservationStation findFree(List<ReservationStation> stations) {
     if (stations == null) return null;
     for (ReservationStation rs : stations) {
         if (!rs.busy) return rs;
+    }
+    return null;
+}
+
+private LoadBuffer findFreeLoad(List<LoadBuffer> buffers) {
+    if (buffers == null) return null;
+    for (LoadBuffer lb : buffers) {
+        if (!lb.busy) return lb;
+    }
+    return null;
+}
+
+private StoreBuffer findFreeStore(List<StoreBuffer> buffers) {
+    if (buffers == null) return null;
+    for (StoreBuffer sb : buffers) {
+        if (!sb.busy) return sb;
     }
     return null;
 }
@@ -341,6 +384,107 @@ private void allocateLoadStore(ReservationStation rs, Instruction ins, boolean i
     ins.issueCycle = currentCycle;
 }
 
+private void allocateLoad(LoadBuffer lb, Instruction ins) {
+    lb.busy = true;
+    // Determine data size based on instruction opcode
+    switch (ins.op) {
+        case LW:
+            lb.size = LoadBuffer.DataSize.WORD; // 4 bytes (int)
+            break;
+        case L_S:
+            lb.size = LoadBuffer.DataSize.SINGLE; // 4 bytes (float)
+            break;
+        case LD:
+        case L_D:
+        default:
+            lb.size = LoadBuffer.DataSize.DOUBLE; // 8 bytes (double)
+            break;
+    }
+    lb.timeLeft = instructionLatencies.getOrDefault("LOAD", 2);
+    lb.addressReady = false;
+    lb.destRegister = ins.dest;
+    lb.offset = ins.immediate;
+    
+    // Set destination register Qi
+    if (ins.dest != null) {
+        Register destReg = getRegisterByName(ins.dest);
+        if (destReg != null) destReg.Qi = lb.name;
+    }
+    
+    // Base register (j)
+    if (ins.j != null) {
+        Register baseReg = getRegisterByName(ins.j);
+        if (baseReg != null) {
+            if (baseReg.Qi != null) {
+                lb.Qj = baseReg.Qi;
+            } else {
+                lb.baseRegValue = baseReg.value;
+                lb.Qj = null;
+                // Compute address immediately
+                lb.calculatedAddress = (int)lb.baseRegValue + lb.offset;
+                lb.addressReady = true;
+            }
+        }
+    }
+    
+    ins.issueCycle = currentCycle;
+}
+
+private void allocateStore(StoreBuffer sb, Instruction ins) {
+    sb.busy = true;
+    // Determine data size based on instruction opcode
+    switch (ins.op) {
+        case SW:
+            sb.size = StoreBuffer.DataSize.WORD; // 4 bytes (int)
+            break;
+        case S_S:
+            sb.size = StoreBuffer.DataSize.SINGLE; // 4 bytes (float)
+            break;
+        case SD:
+        case S_D:
+        default:
+            sb.size = StoreBuffer.DataSize.DOUBLE; // 8 bytes (double)
+            break;
+    }
+    sb.timeLeft = instructionLatencies.getOrDefault("STORE", 2);
+    sb.addressReady = false;
+    sb.valueReady = false;
+    sb.offset = ins.immediate;
+    sb.sourceRegister = ins.j;
+    
+    // Source register (j) - value to store
+    if (ins.j != null) {
+        Register srcReg = getRegisterByName(ins.j);
+        if (srcReg != null) {
+            if (srcReg.Qi != null) {
+                sb.Qk = srcReg.Qi;
+            } else {
+                sb.V_Value = srcReg.value;
+                sb.Qk = null;
+                sb.valueReady = true;
+            }
+        }
+    }
+    
+    // Base register (k)
+    if (ins.k != null) {
+        Register baseReg = getRegisterByName(ins.k);
+        if (baseReg != null) {
+            if (baseReg.Qi != null) {
+                sb.Qj = baseReg.Qi;
+            } else {
+                sb.baseRegValue = baseReg.value;
+                sb.Qj = null;
+                // Compute address immediately
+                sb.calculatedAddress = (int)sb.baseRegValue + sb.offset;
+                sb.addressReady = true;
+            }
+        }
+    }
+    
+    ins.issueCycle = currentCycle;
+}
+
 private Register getRegisterByName(String name) {
     if (name == null) return null;
     name = name.trim().toUpperCase();
@@ -355,7 +499,7 @@ private Register getRegisterByName(String name) {
     } else if (name.charAt(0) == 'R') {
         try {
             int idx = Integer.parseInt(name.substring(1));
-            if (idx >= 0 && idx < intRegs.length) return floatRegs[idx];
+            if (idx >= 0 && idx < intRegs.length) return intRegs[idx];
         } catch (NumberFormatException e) {
             return null;
         }
@@ -371,8 +515,8 @@ public List<ReservationStation> getMulStations() { return mulStations; }
 public Register[] getFloatRegs() { return floatRegs; }
 public Register[] getIntRegs() { return intRegs; }
 public boolean isBranchStalled() { return branchStalled; }
-public List<ReservationStation> getLoadBuffers() { return loadBuffers; }
-public List<ReservationStation> getStoreBuffers() { return storeBuffers; }
+public List<LoadBuffer> getLoadBuffers() { return loadBuffers; }
+public List<StoreBuffer> getStoreBuffers() { return storeBuffers; }
 
 // ADD THESE: Methods to configure latencies
 public void setInstructionLatency(String opType, int cycles) {
@@ -392,14 +536,257 @@ public ReservationStation getBranchStation() {
     return branchStation;
 }
 
+// ===== Configuration Methods =====
+
+/**
+ * Reconfigure memory system at runtime
+ */
+public void configureMemorySystem(int memSizeInBytes, int cacheSize, int blockSize, int hitLatency, int missPenalty) {
+    this.memory = new MemorySystem(memSizeInBytes, cacheSize, blockSize, hitLatency, missPenalty);
+    System.out.println("Memory system reconfigured");
+}
+
+public MemorySystem getMemorySystem() {
+    return memory;
+}
+
+public void printCacheStatistics() {
+    memory.printStatistics();
+}
+
+public void resetCacheStatistics() {
+    memory.resetStatistics();
+}
+
+/**
+ * Pre-load a floating-point register with a value
+ * @param regName Register name (e.g., "F0", "F1")
+ * @param value Value to load
+ */
+public void setFloatRegisterValue(String regName, double value) {
+    Register reg = getRegisterByName(regName);
+    if (reg != null && regName.startsWith("F")) {
+        reg.value = value;
+        reg.Qi = null; // Clear any dependency
+        System.out.println("Loaded " + regName + " = " + value);
+    } else {
+        System.err.println("Invalid float register: " + regName);
+    }
+}
+
+/**
+ * Pre-load an integer register with a value
+ * @param regName Register name (e.g., "R0", "R1")
+ * @param value Value to load
+ */
+public void setIntRegisterValue(String regName, double value) {
+    Register reg = getRegisterByName(regName);
+    if (reg != null && regName.startsWith("R")) {
+        reg.value = value;
+        reg.Qi = null; // Clear any dependency
+        System.out.println("Loaded " + regName + " = " + value);
+    } else {
+        System.err.println("Invalid integer register: " + regName);
+    }
+}
+
+/**
+ * Pre-load multiple registers from a map
+ * @param registerValues Map of register names to values
+ */
+public void loadRegisterValues(Map<String, Double> registerValues) {
+    for (Map.Entry<String, Double> entry : registerValues.entrySet()) {
+        String regName = entry.getKey().toUpperCase();
+        double value = entry.getValue();
+        if (regName.startsWith("F")) {
+            setFloatRegisterValue(regName, value);
+        } else if (regName.startsWith("R")) {
+            setIntRegisterValue(regName, value);
+        }
+    }
+}
+
+/**
+ * Pre-load memory locations with values
+ * @param address Memory address
+ * @param value Value to store (as double)
+ * @param size Data size (4 or 8 bytes)
+ */
+public void preloadMemory(int address, double value, int size) {
+    if (size == 4) {
+        memory.storeInt(address, (int) value);
+    } else if (size == 8) {
+        memory.storeDouble(address, value);
+    }
+    System.out.println("Preloaded memory[" + address + "] = " + value + " (" + size + " bytes)");
+}
+
+/**
+ * Reset the entire simulator to initial state
+ */
+public void reset() {
+    // Clear instruction queue
+    instructionQueue.clear();
+    program.clear();
+    pc = 0;
+    currentCycle = 0;
+    branchStalled = false;
+    
+    // Clear all reservation stations
+    for (ReservationStation rs : addStations) rs.clear();
+    for (ReservationStation rs : mulStations) rs.clear();
+    branchStation.clear();
+    
+    // Clear all buffers
+    for (LoadBuffer lb : loadBuffers) lb.clear();
+    for (StoreBuffer sb : storeBuffers) sb.clear();
+    
+    // Clear register dependencies (but keep values)
+    for (Register reg : floatRegs) reg.Qi = null;
+    for (Register reg : intRegs) reg.Qi = null;
+    
+    // Reset cache statistics
+    memory.resetStatistics();
+    
+    System.out.println("Simulator reset to initial state");
+}
+
+// ===== Status Query Methods for GUI =====
+
+/**
+ * Get current instruction queue for display
+ */
+public List<Instruction> getInstructionQueueAsList() {
+    return new ArrayList<>(instructionQueue);
+}
+
+/**
+ * Get all instructions in the program
+ */
+public List<Instruction> getProgram() {
+    return new ArrayList<>(program);
+}
+
+/**
+ * Get detailed status of all reservation stations
+ */
+public Map<String, Object> getReservationStationStatus(ReservationStation rs) {
+    Map<String, Object> status = new HashMap<>();
+    status.put("name", rs.name);
+    status.put("busy", rs.busy);
+    status.put("op", rs.op);
+    status.put("Vj", rs.Vj);
+    status.put("Vk", rs.Vk);
+    status.put("Qj", rs.Qj);
+    status.put("Qk", rs.Qk);
+    status.put("timeLeft", rs.timeLeft);
+    return status;
+}
+
+/**
+ * Get detailed status of a load buffer
+ */
+public Map<String, Object> getLoadBufferStatus(LoadBuffer lb) {
+    Map<String, Object> status = new HashMap<>();
+    status.put("name", lb.name);
+    status.put("busy", lb.busy);
+    status.put("address", lb.calculatedAddress);
+    status.put("addressReady", lb.addressReady);
+    status.put("valueReady", lb.valueReady);
+    status.put("Qj", lb.Qj);
+    status.put("timeLeft", lb.timeLeft);
+    return status;
+}
+
+/**
+ * Get detailed status of a store buffer
+ */
+public Map<String, Object> getStoreBufferStatus(StoreBuffer sb) {
+    Map<String, Object> status = new HashMap<>();
+    status.put("name", sb.name);
+    status.put("busy", sb.busy);
+    status.put("address", sb.calculatedAddress);
+    status.put("addressReady", sb.addressReady);
+    status.put("valueReady", sb.valueReady);
+    status.put("Qj", sb.Qj);
+    status.put("Qk", sb.Qk);
+    status.put("timeLeft", sb.timeLeft);
+    return status;
+}
+
+/**
+ * Get register file status for display
+ */
+public Map<String, Object> getRegisterStatus(Register reg) {
+    Map<String, Object> status = new HashMap<>();
+    status.put("name", reg.name);
+    status.put("value", reg.value);
+    status.put("Qi", reg.Qi);
+    return status;
+}
+
+/**
+ * Get complete simulator state snapshot for GUI display
+ */
+public Map<String, Object> getCompleteStatus() {
+    Map<String, Object> state = new HashMap<>();
+    
+    state.put("cycle", currentCycle);
+    state.put("branchStalled", branchStalled);
+    state.put("queueSize", instructionQueue.size());
+    
+    // Add station statuses
+    List<Map<String, Object>> addStats = new ArrayList<>();
+    for (ReservationStation rs : addStations) {
+        addStats.add(getReservationStationStatus(rs));
+    }
+    state.put("addStations", addStats);
+    
+    List<Map<String, Object>> mulStats = new ArrayList<>();
+    for (ReservationStation rs : mulStations) {
+        mulStats.add(getReservationStationStatus(rs));
+    }
+    state.put("mulStations", mulStats);
+    
+    state.put("branchStation", getReservationStationStatus(branchStation));
+    
+    // Add buffer statuses
+    List<Map<String, Object>> loadStats = new ArrayList<>();
+    for (LoadBuffer lb : loadBuffers) {
+        loadStats.add(getLoadBufferStatus(lb));
+    }
+    state.put("loadBuffers", loadStats);
+    
+    List<Map<String, Object>> storeStats = new ArrayList<>();
+    for (StoreBuffer sb : storeBuffers) {
+        storeStats.add(getStoreBufferStatus(sb));
+    }
+    state.put("storeBuffers", storeStats);
+    
+    // Add register file
+    List<Map<String, Object>> floatRegStats = new ArrayList<>();
+    for (Register reg : floatRegs) {
+        floatRegStats.add(getRegisterStatus(reg));
+    }
+    state.put("floatRegisters", floatRegStats);
+    
+    List<Map<String, Object>> intRegStats = new ArrayList<>();
+    for (Register reg : intRegs) {
+        intRegStats.add(getRegisterStatus(reg));
+    }
+    state.put("intRegisters", intRegStats);
+    
+    return state;
+}
+
 // Hardware Components
-private MemoryUnit memory;
+private MemorySystem memory;
 private Register[] floatRegs;
 private Register[] intRegs;
 private List<ReservationStation> addStations;
 private List<ReservationStation> mulStations;
-private List<ReservationStation> loadBuffers;   // ADD THIS
-private List<ReservationStation> storeBuffers;  // ADD THIS
+private List<LoadBuffer> loadBuffers;   // ADD THIS
+private List<StoreBuffer> storeBuffers;  // ADD THIS
 private ReservationStation branchStation;  // ADD THIS - single branch RS
 private int currentCycle = 0;
 
@@ -432,31 +819,37 @@ private void executeStage() {
     }
     
     // Execute Load operations
-    for (ReservationStation lb : loadBuffers) {
+    for (LoadBuffer lb : loadBuffers) {
         if (lb.busy && lb.addressReady && lb.timeLeft > 0) {
             lb.timeLeft--;
             if (lb.timeLeft == 0) {
-                // Load from memory
-                lb.result = memory.load(lb.address);
+                // Load from memory - memory.load() sets lb.result internally
+                memory.load(lb.calculatedAddress, lb.size, lb);
+                lb.valueReady = true; // Signal that value is ready for writeback
             }
         } else if (lb.busy && !lb.addressReady && lb.Qj == null) {
             // Address dependencies resolved, compute address
-            lb.address = (int)lb.Vj; // simplified
+            lb.calculatedAddress = (int)lb.baseRegValue + lb.offset;
             lb.addressReady = true;
         }
     }
     
     // Execute Store operations (similar to loads)
-    for (ReservationStation sb : storeBuffers) {
-        if (sb.busy && sb.addressReady && sb.Qj == null && sb.timeLeft > 0) {
+    for (StoreBuffer sb : storeBuffers) {
+        if (sb.busy && sb.addressReady && sb.valueReady && sb.timeLeft > 0) {
             sb.timeLeft--;
             if (sb.timeLeft == 0) {
-                memory.store(sb.address, sb.Vj);
+                // Store to memory using the store buffer's size
+                memory.store(sb.calculatedAddress, sb.size, sb.V_Value);
                 sb.busy = false; // Store completes without CDB
             }
-        } else if (sb.busy && !sb.addressReady && sb.Qk == null) {
-            sb.address = (int)sb.Vk;
+        } else if (sb.busy && !sb.addressReady && sb.Qj == null) {
+            // Address dependencies resolved, compute address
+            sb.calculatedAddress = (int)sb.baseRegValue + sb.offset;
             sb.addressReady = true;
+        } else if (sb.busy && !sb.valueReady && sb.Qk == null) {
+            // Value dependency resolved
+            sb.valueReady = true;
         }
     }
 
@@ -507,26 +900,55 @@ private double computeResult(ReservationStation rs) {
 }
 
 private void writeBackStage() {
-    // Collect all stations ready to write back
-    List<ReservationStation> readyStations = new ArrayList<>();
+    // CDB Arbitration: Find one ready station/buffer to write back
+    // Priority Order: Add Stations -> Mul Stations -> Load Buffers
+    // This ensures deterministic behavior when multiple units finish in the same cycle
+    String winnerTag = null;
+    double winnerValue = 0.0;
+    boolean foundWinner = false;
     
-    for (ReservationStation rs : addStations) {
-        if (rs.busy && rs.timeLeft == 0) readyStations.add(rs);
-    }
-    for (ReservationStation rs : mulStations) {
-        if (rs.busy && rs.timeLeft == 0) readyStations.add(rs);
-    }
-    for (ReservationStation lb : loadBuffers) {
-        if (lb.busy && lb.timeLeft == 0) readyStations.add(lb);
+    // Check ReservationStations (ADD/MUL)
+    if (!foundWinner) {
+        for (ReservationStation rs : addStations) {
+            if (rs.busy && rs.timeLeft == 0) {
+                winnerTag = rs.name;
+                winnerValue = rs.result;
+                foundWinner = true;
+                rs.busy = false; // Free the station
+                break;
+            }
+        }
     }
     
-    // CDB Arbitration: only one can publish per cycle
-    if (!readyStations.isEmpty()) {
-        ReservationStation winner = readyStations.get(0); // Simple: first one wins
-        
-        // Broadcast on CDB
-        String tag = winner.name;
-        double value = winner.result;
+    if (!foundWinner) {
+        for (ReservationStation rs : mulStations) {
+            if (rs.busy && rs.timeLeft == 0) {
+                winnerTag = rs.name;
+                winnerValue = rs.result;
+                foundWinner = true;
+                rs.busy = false; // Free the station
+                break;
+            }
+        }
+    }
+    
+    // Check LoadBuffers
+    if (!foundWinner) {
+        for (LoadBuffer lb : loadBuffers) {
+            if (lb.busy && lb.valueReady) {
+                winnerTag = lb.name;
+                winnerValue = lb.result;
+                foundWinner = true;
+                lb.clear(); // Free the buffer
+                break;
+            }
+        }
+    }
+    
+    // If we have a winner, broadcast on CDB
+    if (foundWinner) {
+        String tag = winnerTag;
+        double value = winnerValue;
         
         // Update all waiting stations
         for (ReservationStation rs : addStations) {
@@ -535,10 +957,10 @@ private void writeBackStage() {
         for (ReservationStation rs : mulStations) {
             rs.listenToCDB(tag, value);
         }
-        for (ReservationStation lb : loadBuffers) {
+        for (LoadBuffer lb : loadBuffers) {
             lb.listenToCDB(tag, value);
         }
-        for (ReservationStation sb : storeBuffers) {
+        for (StoreBuffer sb : storeBuffers) {
             sb.listenToCDB(tag, value);
         }
 
@@ -560,9 +982,6 @@ private void writeBackStage() {
                 reg.Qi = null;
             }
         }
-        
-        // Free the reservation station
-        winner.busy = false;
     }
 
     // Update branch station dependencies from CDB (if any)

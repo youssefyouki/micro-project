@@ -217,4 +217,117 @@ public class MemorySystem {
         }
         System.out.println("Cache invalidated");
     }
+    
+    // ===== Adapter Methods for LoadBuffer/StoreBuffer Compatibility =====
+    
+    /**
+     * Load data with DataSize enum support (for LoadBuffer compatibility)
+     * Sets result directly in the LoadBuffer and returns latency
+     */
+    public int load(int address, LoadBuffer.DataSize size, LoadBuffer callingBuffer) {
+        int bytesToRead;
+        switch (size) {
+            case WORD:
+            case SINGLE:
+                bytesToRead = 4;
+                break;
+            case DOUBLE:
+            default:
+                bytesToRead = 8;
+                break;
+        }
+        
+        try {
+            MemoryResponse response = load(address, bytesToRead);
+            
+            // Convert bytes to appropriate type and store in buffer
+            double result;
+            switch (size) {
+                case WORD:
+                    result = (double) response.toInt();
+                    break;
+                case SINGLE:
+                    result = (double) bytesToFloat(response.getData());
+                    break;
+                case DOUBLE:
+                default:
+                    result = response.toDouble();
+                    break;
+            }
+            
+            callingBuffer.result = result;
+            return response.getCyclesTaken();
+            
+        } catch (IllegalArgumentException e) {
+            System.err.println("Memory access error: " + e.getMessage());
+            callingBuffer.result = Double.NaN;
+            return 1;
+        }
+    }
+    
+    /**
+     * Store data with DataSize enum support (for StoreBuffer compatibility)
+     */
+    public int store(int address, StoreBuffer.DataSize size, double value) {
+        byte[] data;
+        switch (size) {
+            case WORD:
+                data = intToBytes((int) value);
+                break;
+            case SINGLE:
+                data = floatToBytes((float) value);
+                break;
+            case DOUBLE:
+            default:
+                data = doubleToBytes(value);
+                break;
+        }
+        
+        try {
+            store(address, data);
+            // Store operations take hit latency (write-through)
+            return hitLatency;
+        } catch (IllegalArgumentException e) {
+            System.err.println("Memory access error: " + e.getMessage());
+            return 1;
+        }
+    }
+    
+    // Helper conversion methods
+    private float bytesToFloat(byte[] bytes) {
+        if (bytes.length < 4) return 0.0f;
+        int intBits = ((bytes[0] & 0xFF) << 24) |
+                     ((bytes[1] & 0xFF) << 16) |
+                     ((bytes[2] & 0xFF) << 8) |
+                     (bytes[3] & 0xFF);
+        return Float.intBitsToFloat(intBits);
+    }
+    
+    private byte[] intToBytes(int value) {
+        byte[] data = new byte[4];
+        data[0] = (byte) ((value >> 24) & 0xFF);
+        data[1] = (byte) ((value >> 16) & 0xFF);
+        data[2] = (byte) ((value >> 8) & 0xFF);
+        data[3] = (byte) (value & 0xFF);
+        return data;
+    }
+    
+    private byte[] floatToBytes(float value) {
+        int intBits = Float.floatToIntBits(value);
+        return intToBytes(intBits);
+    }
+    
+    private byte[] doubleToBytes(double value) {
+        long longBits = Double.doubleToLongBits(value);
+        byte[] data = new byte[8];
+        data[0] = (byte) ((longBits >> 56) & 0xFF);
+        data[1] = (byte) ((longBits >> 48) & 0xFF);
+        data[2] = (byte) ((longBits >> 40) & 0xFF);
+        data[3] = (byte) ((longBits >> 32) & 0xFF);
+        data[4] = (byte) ((longBits >> 24) & 0xFF);
+        data[5] = (byte) ((longBits >> 16) & 0xFF);
+        data[6] = (byte) ((longBits >> 8) & 0xFF);
+        data[7] = (byte) (longBits & 0xFF);
+        return data;
+    }
 }
