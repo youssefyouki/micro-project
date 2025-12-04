@@ -1,4 +1,4 @@
-package Components;
+package components;
 
 public class Register {
     public String name; // e.g., "F0"

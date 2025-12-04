@@ -1,6 +1,6 @@
-package Components;
+package components;
 
-import Components.LoadBuffer.DataSize; // Import the nested enum from LoadBuffer
+import components.LoadBuffer.DataSize; // Import the nested enum from LoadBuffer
 
 public class MemoryUnit {
     private static final int MEM_SIZE = 65536; // Example size
@@ -38,7 +38,36 @@ public class MemoryUnit {
         }
     }
     
-    // TODO: Add similar helpers for bytesToFloat, floatToBytes, bytesToInt, intToBytes
+    // Helper to convert 4 bytes to int (little-endian)
+    private int bytesToInt(byte[] bytes, int start) {
+        int value = 0;
+        for (int i = 0; i < 4; i++) {
+            value |= ((int) bytes[start + i] & 0xFF) << (8 * i);
+        }
+        return value;
+    }
+    
+    private void intToBytes(int value, byte[] bytes, int start) {
+        for (int i = 0; i < 4; i++) {
+            bytes[start + i] = (byte) ((value >> (8 * i)) & 0xFF);
+        }
+    }
+    
+    // Helper to convert 4 bytes to float (little-endian)
+    private float bytesToFloat(byte[] bytes, int start) {
+        int intBits = 0;
+        for (int i = 0; i < 4; i++) {
+            intBits |= ((int) bytes[start + i] & 0xFF) << (8 * i);
+        }
+        return Float.intBitsToFloat(intBits);
+    }
+    
+    private void floatToBytes(float value, byte[] bytes, int start) {
+        int intBits = Float.floatToIntBits(value);
+        for (int i = 0; i < 4; i++) {
+            bytes[start + i] = (byte) ((intBits >> (8 * i)) & 0xFF);
+        }
+    }
 
     // --- 1. Load Implementation (LW, LD, L.S, L.D) ---
     
@@ -71,14 +100,31 @@ public class MemoryUnit {
         // The load operation always reads the required bytes and converts them.
         switch (size) {
             case DOUBLE:
-                // Assuming address alignment and size is 8 bytes
+                // LD, L.D: Read 8 bytes as double
+                if (address + 8 > mainMemory.length) {
+                    System.err.println("Memory access violation: not enough bytes for DOUBLE at address: " + address);
+                    callingBuffer.result = Double.NaN;
+                    return 1;
+                }
                 data = bytesToDouble(mainMemory, address);
                 break;
             case WORD:
+                // LW: Read 4 bytes as integer, convert to double for register storage
+                if (address + 4 > mainMemory.length) {
+                    System.err.println("Memory access violation: not enough bytes for WORD at address: " + address);
+                    callingBuffer.result = Double.NaN;
+                    return 1;
+                }
+                data = (double) bytesToInt(mainMemory, address);
+                break;
             case SINGLE:
-                // TODO: Implement proper 4-byte read/conversion (e.g., integer or float)
-                // For simplicity, reading as a double placeholder:
-                data = bytesToDouble(mainMemory, address); 
+                // L.S: Read 4 bytes as float, convert to double for register storage
+                if (address + 4 > mainMemory.length) {
+                    System.err.println("Memory access violation: not enough bytes for SINGLE at address: " + address);
+                    callingBuffer.result = Double.NaN;
+                    return 1;
+                }
+                data = (double) bytesToFloat(mainMemory, address);
                 break;
         }
 
@@ -113,12 +159,28 @@ public class MemoryUnit {
         // Write the required bytes based on size
         switch (size) {
             case DOUBLE:
+                // SD, S.D: Write 8 bytes as double
+                if (address + 8 > mainMemory.length) {
+                    System.err.println("Memory access violation: not enough space for DOUBLE at address: " + address);
+                    return 1;
+                }
                 doubleToBytes(value, mainMemory, address);
                 break;
             case WORD:
+                // SW: Write 4 bytes as integer (truncate double to int)
+                if (address + 4 > mainMemory.length) {
+                    System.err.println("Memory access violation: not enough space for WORD at address: " + address);
+                    return 1;
+                }
+                intToBytes((int) value, mainMemory, address);
+                break;
             case SINGLE:
-                // TODO: Implement conversion for 4-byte writes (int/float)
-                doubleToBytes(value, mainMemory, address); // Using double helper as placeholder
+                // S.S: Write 4 bytes as float (cast double to float)
+                if (address + 4 > mainMemory.length) {
+                    System.err.println("Memory access violation: not enough space for SINGLE at address: " + address);
+                    return 1;
+                }
+                floatToBytes((float) value, mainMemory, address);
                 break;
         }
 
@@ -126,8 +188,23 @@ public class MemoryUnit {
         return latency;
     }
 
-    public int store(int calculatedAddress, Components.StoreBuffer.DataSize size, double v_Value) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'store'");
+    // Overload to handle StoreBuffer.DataSize (same as LoadBuffer.DataSize)
+    public int store(int address, components.StoreBuffer.DataSize size, double value) {
+        // Convert StoreBuffer.DataSize to LoadBuffer.DataSize
+        DataSize loadSize;
+        switch (size) {
+            case WORD:
+                loadSize = DataSize.WORD;
+                break;
+            case SINGLE:
+                loadSize = DataSize.SINGLE;
+                break;
+            case DOUBLE:
+                loadSize = DataSize.DOUBLE;
+                break;
+            default:
+                loadSize = DataSize.DOUBLE;
+        }
+        return store(address, value, loadSize);
     }
 }

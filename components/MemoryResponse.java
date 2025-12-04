@@ -1,4 +1,4 @@
-package Components;
+package components;
 
 /**
  * MemoryResponse - Encapsulates the result of a memory operation

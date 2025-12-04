@@ -1,4 +1,4 @@
-package Components;
+package components;
 
 public class LoadBuffer {
     // Inside LoadBuffer.java or StoreBuffer.java

@@ -1,4 +1,4 @@
-package Components;
+package components;
 
 /**
  * MemorySystemTest - Demonstrates Cache Hit/Miss behavior
