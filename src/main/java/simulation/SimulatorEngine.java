@@ -983,6 +983,8 @@ private void writeBackStage() {
     String winnerTag = null;
     double winnerValue = 0.0;
     boolean foundWinner = false;
+    ReservationStation winnerStation = null;
+    LoadBuffer winnerLoadBuffer = null;
     
     // Check ReservationStations (ADD/MUL)
     if (!foundWinner) {
@@ -990,11 +992,11 @@ private void writeBackStage() {
             if (rs.busy && rs.timeLeft == 0) {
                 winnerTag = rs.name;
                 winnerValue = rs.result;
+                winnerStation = rs;
                 foundWinner = true;
                 if (rs.instruction != null) {
                     rs.instruction.writeResultCycle = currentCycle;
                 }
-                rs.clear(); // Clear the station
                 break;
             }
         }
@@ -1005,27 +1007,27 @@ private void writeBackStage() {
             if (rs.busy && rs.timeLeft == 0) {
                 winnerTag = rs.name;
                 winnerValue = rs.result;
+                winnerStation = rs;
                 foundWinner = true;
                 if (rs.instruction != null) {
                     rs.instruction.writeResultCycle = currentCycle;
                 }
-                rs.clear(); // Clear the station
                 break;
             }
         }
     }
     
-    // Check LoadBuffers
+    /** Check load buffers for completed loads */
     if (!foundWinner) {
         for (LoadBuffer lb : loadBuffers) {
             if (lb.busy && lb.valueReady) {
                 winnerTag = lb.name;
                 winnerValue = lb.result;
+                winnerLoadBuffer = lb;
                 foundWinner = true;
                 if (lb.instruction != null) {
                     lb.instruction.writeResultCycle = currentCycle;
                 }
-                lb.clear(); // Free the buffer
                 break;
             }
         }
@@ -1056,22 +1058,30 @@ private void writeBackStage() {
         }
         
         // Update register file
+        System.out.println("[CDB] Broadcasting " + tag + " = " + value);
         for (Register reg : floatRegs) {
-            if (tag.equals(reg.Qi)) {
+            if (reg.Qi != null && tag.equals(reg.Qi)) {
+                System.out.println("[CDB] Updating " + reg.name + ": " + reg.value + " -> " + value);
                 reg.value = value;
                 reg.Qi = null;
             }
         }
         for (Register reg : intRegs) {
-            if (tag.equals(reg.Qi)) {
+            if (reg.Qi != null && tag.equals(reg.Qi)) {
+                System.out.println("[CDB] Updating " + reg.name + ": " + reg.value + " -> " + value);
                 reg.value = value;
                 reg.Qi = null;
             }
         }
+        
+        // Clear the winning station/buffer AFTER all updates are complete
+        if (winnerStation != null) {
+            winnerStation.clear();
+        }
+        if (winnerLoadBuffer != null) {
+            winnerLoadBuffer.clear();
+        }
     }
-
-    // Update branch station dependencies from CDB (if any)
-    // This should be in writeBackStage, but adding here for completeness
 }
 
 // Helper method to get register by name (for TestTomasulo compatibility)
