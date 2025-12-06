@@ -116,14 +116,19 @@ public void loadProgram(String asmText) {
 
 // Initialize memory with a double value at a specific address
 public void initializeMemory(int address, double value) {
-    // Convert double to 8 bytes and store in memory
+    // Convert double to 8 bytes (Big-Endian to match MemoryResponse.toDouble())
     long bits = Double.doubleToLongBits(value);
     System.out.println("[INIT] Writing " + value + " to memory address " + address + 
                        " (0x" + String.format("%04X", address) + ")");
-    for (int i = 0; i < 8; i++) {
-        byte b = (byte) ((bits >> (i * 8)) & 0xFF);
-        memory.storeByte(address + i, b);
-    }
+    // Store in Big-Endian order (MSB first)
+    memory.storeByte(address + 0, (byte) ((bits >> 56) & 0xFF));
+    memory.storeByte(address + 1, (byte) ((bits >> 48) & 0xFF));
+    memory.storeByte(address + 2, (byte) ((bits >> 40) & 0xFF));
+    memory.storeByte(address + 3, (byte) ((bits >> 32) & 0xFF));
+    memory.storeByte(address + 4, (byte) ((bits >> 24) & 0xFF));
+    memory.storeByte(address + 5, (byte) ((bits >> 16) & 0xFF));
+    memory.storeByte(address + 6, (byte) ((bits >> 8) & 0xFF));
+    memory.storeByte(address + 7, (byte) (bits & 0xFF));
 }
 
 public void nextCycle() {
@@ -423,10 +428,13 @@ private void allocateLoad(LoadBuffer lb, Instruction ins) {
             lb.size = LoadBuffer.DataSize.DOUBLE; // 8 bytes (double)
             break;
     }
-    lb.timeLeft = instructionLatencies.getOrDefault("LOAD", 2);
+    lb.timeLeft = 0; // Will be set when address is ready and memory access is initiated
     lb.addressReady = false;
+    lb.valueReady = false;
     lb.destRegister = ins.dest;
     lb.offset = ins.immediate;
+    
+    System.out.println("  [ALLOCATE] " + lb.name + " for " + ins.op + " " + ins.dest + ", offset=" + ins.immediate + " (instruction: " + ins.toString() + ")");
     
     // Set destination register Qi
     if (ins.dest != null) {
@@ -843,6 +851,12 @@ private void executeStage() {
     // Execute ALU operations (ADD/MUL stations)
     for (ReservationStation rs : addStations) {
         if (rs.busy && rs.Qj == null && rs.Qk == null && rs.timeLeft > 0) {
+            // Don't execute on the same cycle as issue
+            if (rs.instruction != null && rs.instruction.issueCycle == currentCycle) {
+                // Skip execution on issue cycle
+                continue;
+            }
+            
             // Mark execution start on first cycle
             if (rs.instruction != null && rs.instruction.executionStartCycle == -1) {
                 rs.instruction.executionStartCycle = currentCycle;
@@ -861,6 +875,12 @@ private void executeStage() {
     
     for (ReservationStation rs : mulStations) {
         if (rs.busy && rs.Qj == null && rs.Qk == null && rs.timeLeft > 0) {
+            // Don't execute on the same cycle as issue
+            if (rs.instruction != null && rs.instruction.issueCycle == currentCycle) {
+                // Skip execution on issue cycle
+                continue;
+            }
+            
             // Mark execution start on first cycle
             if (rs.instruction != null && rs.instruction.executionStartCycle == -1) {
                 rs.instruction.executionStartCycle = currentCycle;
@@ -878,25 +898,40 @@ private void executeStage() {
     
     // Execute Load operations
     for (LoadBuffer lb : loadBuffers) {
-        if (lb.busy && lb.addressReady && lb.timeLeft > 0) {
-            // Mark execution start on first cycle
-            if (lb.instruction != null && lb.instruction.executionStartCycle == -1) {
-                lb.instruction.executionStartCycle = currentCycle;
+        // Case 1: Address just became ready, initiate memory load (but not in the same cycle as issue)
+        if (lb.busy && lb.addressReady && !lb.valueReady && lb.timeLeft == 0) {
+            // Check if this is the first cycle after issue (don't start execution on issue cycle)
+            if (lb.instruction != null && lb.instruction.issueCycle == currentCycle) {
+                // Skip execution on issue cycle, wait for next cycle
+                System.out.println("  " + lb.name + " issued this cycle, will start execution next cycle");
+            } else {
+                // Mark execution start
+                if (lb.instruction != null && lb.instruction.executionStartCycle == -1) {
+                    lb.instruction.executionStartCycle = currentCycle;
+                }
+                // Initiate memory load - this sets lb.result and returns the actual latency
+                int actualLatency = memory.load(lb.calculatedAddress, lb.size, lb);
+                lb.timeLeft = actualLatency;
+                System.out.println("  " + lb.name + " initiated load from address " + lb.calculatedAddress + ", latency=" + actualLatency + " cycles");
             }
-            
+        }
+        // Case 2: Memory access in progress, count down latency
+        else if (lb.busy && lb.addressReady && !lb.valueReady && lb.timeLeft > 0) {
             lb.timeLeft--;
             if (lb.timeLeft == 0) {
-                // Load from memory - memory.load() sets lb.result internally
-                memory.load(lb.calculatedAddress, lb.size, lb);
-                lb.valueReady = true; // Signal that value is ready for writeback
+                // Load completed, value is now ready for write-back
+                lb.valueReady = true;
                 if (lb.instruction != null) {
                     lb.instruction.executionEndCycle = currentCycle;
                 }
+                System.out.println("  " + lb.name + " completed load, result=" + lb.result + ", destReg=" + lb.destRegister);
             }
-        } else if (lb.busy && !lb.addressReady && lb.Qj == null) {
-            // Address dependencies resolved, compute address
+        }
+        // Case 3: Address dependencies resolved, compute address
+        else if (lb.busy && !lb.addressReady && lb.Qj == null) {
             lb.calculatedAddress = (int)lb.baseRegValue + lb.offset;
             lb.addressReady = true;
+            System.out.println("  " + lb.name + " address ready: baseReg=" + lb.baseRegValue + " + offset=" + lb.offset + " = " + lb.calculatedAddress);
         }
     }
     
